@@ -638,3 +638,23 @@ async def account_login(bot: Client, m: Message):
 if __name__ == "__main__":
     # Start the bot with port configuration
     bot.run(port=PORT)
+
+
+from aiohttp import web
+
+async def handle(request):
+    return web.Response(text="Bot is alive!")
+
+async def start_web():
+    app = web.Application()
+    app.router.add_get("/", handle)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+if __name__ == "__main__":
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_web())
+    bot.run()
