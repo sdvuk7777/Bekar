@@ -261,7 +261,360 @@ async def restart_handler(_, m):
     os.execl(sys.executable, sys.executable, *sys.argv)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
+   
+
+# ===================== Classplus (/cp) Extractor =====================
+@bot.on_message(filters.command(["cp"]))
+async def cp_command(bot, message):
+    try:
+        user_id = message.from_user.id
+        if user_id not in auth_users:
+            await message.reply("**You Are Not Authorized To Use This Bot\nContact - @SDV_BOTS_CONTACT_ROBOT**")
+            return
+            
+        THREADPOOL.submit(asyncio.run, process_cp(bot, message, user_id))
+    except Exception as e:
+        logging.error(f"Error in cp command: {e}")
+        await message.reply("An error occurred. Please try again.")
+
+async def process_cp(bot: Client, m: Message, user_id: int):
+    headers = {
+        'accept-encoding': 'gzip',
+        'accept-language': 'EN',
+        'api-version': '35',
+        'app-version': '1.4.73.2',
+        'build-number': '35',
+        'connection': 'Keep-Alive',
+        'content-type': 'application/json',
+        'device-details': 'Xiaomi_Redmi 7_SDK-32',
+        'device-id': 'c28d3cb16bbdac01',
+        'host': 'api.classplusapp.com',
+        'region': 'IN',
+        'user-agent': 'Mobile-Android',
+        'webengage-luid': '00000187-6fe4-5d41-a530-26186858be4c'
+    }
+
+    loop = asyncio.get_event_loop()
+    CONNECTOR = aiohttp.TCPConnector(limit=1000, loop=loop)
+    
+    async with aiohttp.ClientSession(connector=CONNECTOR, loop=loop) as session:
+        try:
+            # Ask for org code
+            editable = await m.reply("**Enter ORG Code Of Your Classplus App**")
+            org_code = await wait_for_user_input(bot, m, user_id)
+            if not org_code:
+                return
+
+            # Get batch selection method
+            editable = await m.reply("**Do you know your Batch ID? (Yes/No)**")
+            batch_method = await wait_for_user_input(bot, m, user_id)
+            if not batch_method:
+                return
+
+            batch_method = batch_method.lower()
+            if batch_method == 'yes':
+                # Direct batch ID input
+                editable = await m.reply("**Please enter your Batch ID**")
+                batch_id = await wait_for_user_input(bot, m, user_id)
+                if not batch_id:
+                    return
+                
+                # Validate batch ID
+                batch_info = await validate_batch_id(session, headers, org_code, batch_id)
+                if not batch_info:
+                    await m.reply(" Invalid Batch ID. Please try again.")
+                    return
+                    
+                selected_batch_id = batch_id
+                selected_batch_name = batch_info['name']
+            else:
+                # Batch search flow
+                editable = await m.reply("**Enter Batch Name to Search**")
+                search_term = await wait_for_user_input(bot, m, user_id)
+                if not search_term:
+                    return
+
+                # Search for batches
+                batches = await search_batches(session, headers, org_code, search_term)
+                if not batches:
+                    await m.reply(" No batches found matching your search.")
+                    return
+
+                # Show batch list
+                batch_list = "\n".join(
+                    f"{idx+1}. {batch['name']} (ID: {batch['id']})"
+                    for idx, batch in enumerate(batches[:10])  # Limit to 10 results
+                )
+                
+                editable = await m.reply(
+                    f"**Found matching batches. Please reply with the number of the batch you want:\n\n{batch_list}**"
+                )
+                
+                # Get user selection
+                selection = await wait_for_user_input(bot, m, user_id)
+                if not selection or not selection.isdigit():
+                    await m.reply(" Invalid selection. Please try again.")
+                    return
+                    
+                selection_idx = int(selection) - 1
+                if selection_idx < 0 or selection_idx >= len(batches):
+                    await m.reply(" Invalid selection number. Please try again.")
+                    return
+                    
+                selected_batch = batches[selection_idx]
+                selected_batch_id = selected_batch['id']
+                selected_batch_name = selected_batch['name']
+
+            # Start extraction
+            clean_batch_name = re.sub(r'[\/|]', '-', selected_batch_name)
+            clean_file_name = f"{user_id}_{clean_batch_name}"
+            
+            editable = await m.reply(f"**Extracting course: {selected_batch_name}...**")
+            start_time = time.time()
+
+            # Get batch token
+            batch_token = await get_batch_token(session, headers, org_code, selected_batch_id)
+            if not batch_token:
+                await m.reply(" Failed to get batch token. Please try again.")
+                return
+
+            # Get course content (optimized version)
+            content = await get_course_content_fast(session, headers, batch_token)
+            if not content:
+                await m.reply(" No content found in this batch.")
+                return
+
+            # Save to file
+            with open(f"{clean_file_name}.txt", 'w', encoding='utf-8') as f:
+                f.write('\n'.join(content))
+
+            # Calculate time taken
+            end_time = time.time()
+            time_taken = format_time(end_time - start_time)
+            
+            # Send file
+            await m.reply_document(
+                document=f"{clean_file_name}.txt",
+                caption=f"**Batch: {selected_batch_name}\nTime Taken: {time_taken}**",
+                file_name=f"{clean_batch_name}.txt"
+            )
+            
+            # Clean up
+            os.remove(f"{clean_file_name}.txt")
+
+        except Exception as e:
+            logging.error(f"Error in Classplus extractor: {e}")
+            await m.reply(f" An error occurred: {str(e)}")
+
+# ===================== PW Extractor =====================
+@bot.on_message(filters.command(["pw"]))
+async def pw_command(bot, message):
+    try:
+        user_id = message.from_user.id
+        if user_id not in auth_users:
+            await message.reply("**You Are Not Authorized To Use This Bot\nContact - @SDV_BOTS_CONTACT_ROBOT**")
+            return
+            
+        THREADPOOL.submit(asyncio.run, process_pwwp(bot, message, user_id, bot_link))
+    except Exception as e:
+        logging.error(f"Error in pw command: {e}")
+        await message.reply("An error occurred. Please try again.")
+
+# Helper functions for PW extractor
+async def process_pwwp(bot: Client, m: Message, user_id: int, bot_link: str):
+    editable = await m.reply_text("**Send your PW authentication code [Token]\n\nOR\n\nSend your Phone Number**")
+
+    try:
+        input1 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+        raw_text1 = input1.text
+        await input1.delete(True)
+    except:
+        await editable.edit("**Timeout! You took too long to respond**")
+        return
+
+    headers = {
+        'Host': 'api.penpencil.co',
+        'client-id': '5eb393ee95fab7468a79d189',
+        'client-version': '1910',
+        'user-agent': 'Mozilla/5.0 (Linux; Android 12; M2101K6P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.0.0 Mobile Safari/537.36',
+        'randomid': '72012511-256c-4e1c-b4c7-29d67136af37',
+        'client-type': 'WEB',
+        'content-type': 'application/json; charset=utf-8',
+    }
+
+    loop = asyncio.get_event_loop()    
+    CONNECTOR = aiohttp.TCPConnector(limit=1000, loop=loop)
+    async with aiohttp.ClientSession(connector=CONNECTOR, loop=loop) as session:
+        try:
+            if raw_text1.isdigit() and len(raw_text1) == 10:
+                phone = raw_text1
+                data = {
+                    "username": phone,
+                    "countryCode": "+91",
+                    "organizationId": "5eb393ee95fab7468a79d189"
+                }
+                try:
+                    async with session.post(f"https://api.penpencil.co/v1/users/get-otp?smsType=0", json=data, headers=headers) as response:
+                        await response.read()
+                    
+                except Exception as e:
+                    await editable.edit(f"**Error : {e}**")
+                    return
+
+                editable = await editable.edit("**OTP sent to your phone. Please enter the OTP**")
+                try:
+                    input2 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+                    otp = input2.text
+                    await input2.delete(True)
+                except:
+                    await editable.edit("**Timeout! You took too long to respond**")
+                    return
+
+                payload = {
+                    "username": phone,
+                    "otp": otp,
+                    "client_id": "system-admin",
+                    "client_secret": "KjPXuAVfC5xbmgreETNMaL7z",
+                    "grant_type": "password",
+                    "organizationId": "5eb393ee95fab7468a79d189",
+                    "latitude": 0,
+                    "longitude": 0
+                }
+
+                try:
+                    async with session.post(f"https://api.penpencil.co/v3/oauth/token", json=payload, headers=headers) as response:
+                        access_token = (await response.json())["data"]["access_token"]
+                        monster = await editable.edit(f"<b>Physics Wallah Login Successful </b>\n\n<pre language='Save this Login Token for future usage'>{access_token}</pre>\n\n")
+                        editable = await m.reply_text("**Getting Batches In Your I'd**")
+                    
+                except Exception as e:
+                    await editable.edit(f"**Error : {e}**")
+                    return
+
+            else:
+                access_token = raw_text1
+            
+            headers['authorization'] = f"Bearer {access_token}"
+        
+            await editable.edit("**Do you know your Batch ID? (Yes/No)**")
+            try:
+                input3 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+                response = input3.text.lower()
+                await input3.delete(True)
+            except:
+                await editable.edit("**Timeout! You took too long to respond**")
+                return
+                
+            if response == 'yes':
+                await editable.edit("**Please enter your Batch ID**")
+                try:
+                    input4 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+                    selected_batch_id = input4.text.strip()
+                    await input4.delete(True)
+                    
+                    url = f"https://api.penpencil.co/v3/batches/{selected_batch_id}/details"
+                    batch_details = await fetch_pwwp_data(session, url, headers=headers)
+                    if batch_details and batch_details.get("success"):
+                        selected_batch_name = batch_details.get("data", {}).get("name", "Unknown Batch")
+                    else:
+                        selected_batch_name = "Unknown Batch"
+                        
+                except:
+                    await editable.edit("**Timeout! You took too long to respond**")
+                    return
+            else:
+                await editable.edit("**Enter Your Batch Name to Search**")
+                try:
+                    input4 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+                    batch_search = input4.text
+                    await input4.delete(True)
+                except:
+                    await editable.edit("**Timeout! You took too long to respond**")
+                    return
+                    
+                courses = find_pw_old_batch(batch_search)
+                if not courses:
+                    raise Exception("No batches found for the given search name.")
+                
+                text = ''
+                for cnt, course in enumerate(courses):
+                    name = course.get('batch_name', 'Unknown Batch')
+                    batch_id = course.get('batch_id', '')
+                    text += f"{cnt + 1}. Batch: {name}\nID: {batch_id}\n\n"
+                
+                await editable.edit(f"**Found matching batches. Please send the Batch ID you want to download.\n\n{text}**")
+            
+                try:
+                    input5 = await bot.listen(chat_id=m.chat.id, filters=filters.user(user_id), timeout=120)
+                    selected_batch_id = input5.text.strip()
+                    await input5.delete(True)
+                    
+                    selected_batch_name = "Unknown Batch"
+                    for course in courses:
+                        if course.get('batch_id') == selected_batch_id:
+                            selected_batch_name = course.get('batch_name', 'Unknown Batch')
+                            break
+                except:
+                    await editable.edit("**Timeout! You took too long to respond**")
+                    return
+                    
+            clean_batch_name = selected_batch_name.replace("/", "-").replace("|", "-")
+            clean_file_name = f"{user_id}_{clean_batch_name}"
+                
+            await editable.edit(f"**Extracting course : {selected_batch_name} ...**")
+              
+            start_time = time.time()
+            
+            url = f"https://api.penpencil.co/v3/batches/{selected_batch_id}/details"
+            batch_details = await fetch_pwwp_data(session, url, headers=headers)
+
+            if batch_details and batch_details.get("success"):
+                subjects = batch_details.get("data", {}).get("subjects", [])
+                all_subject_urls = {}
+
+                subject_tasks = [process_pwwp_subject(session, subject, selected_batch_id, selected_batch_name, all_subject_urls, headers) for subject in subjects]
+                await asyncio.gather(*subject_tasks)
+                        
+                with open(f"{clean_file_name}.txt", 'w', encoding='utf-8') as f:
+                    for subject in subjects:
+                        subject_name = subject.get("subject", "Unknown Subject").replace("/", "-")
+                        if subject_name in all_subject_urls:
+                            f.write('\n'.join(all_subject_urls[subject_name]) + '\n' )
+                                
+                end_time = time.time()
+                response_time = end_time - start_time
+                formatted_time = f"{response_time:.2f} seconds"
+                        
+                await editable.delete(True)
+                            
+                caption = f"**Batch Name : ```\n{selected_batch_name}``````\nTime Taken : {formatted_time}```**\n\n SDV_BOTX"
+                            
+                try:
+                    with open(f"{clean_file_name}.txt", 'rb') as f:
+                        doc = await m.reply_document(document=f, caption=caption, file_name=f"{clean_batch_name}.txt")
+                except FileNotFoundError:
+                    logging.error(f"File not found: {clean_file_name}.txt")
+                except Exception as e:
+                    logging.exception(f"Error sending document {clean_file_name}.txt:")
+                finally:
+                    try:
+                        os.remove(f"{clean_file_name}.txt")
+                    except OSError as e:
+                        logging.error(f"Error deleting {clean_file_name}.txt: {e}")
+                            
+            else:
+                raise Exception(f"Error fetching batch details: {batch_details.get('message')}")
+
+        except Exception as e:
+            logging.exception(f"An unexpected error occurred: {e}")
+            try:
+                await editable.edit(f"**Error : {e}**")
+            except Exception as ee:
+                logging.error(f"Failed to send error message to user in callback: {ee}")
+        finally:
+            if session:
+                await session.close()
+            await CONNector.close()                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
 @bot.on_message(filters.command("drm")) # & filters.private)
 async def account_login(bot: Client, m: Message):
     #if m.chat.type == "private":
