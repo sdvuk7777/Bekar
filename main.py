@@ -24,26 +24,8 @@ logger = logging.getLogger(__name__)
 MAX_PARALLEL_DOWNLOADS = 16
 CHUNK_SIZE = 1024 * 1024 * 4  # 4MB chunks
 UPLOAD_CHUNK_SIZE = 512 * 1024
-SUBSCRIPTION_FILE = "subscription_data.txt"
-YOUR_ADMIN_ID = 6877021488
 
 bot = Client("fast_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-# Helper functions
-def read_subscription_data():
-    if not os.path.exists(SUBSCRIPTION_FILE):
-        return []
-    with open(SUBSCRIPTION_FILE, "r") as f:
-        return [line.strip().split(",") for line in f.readlines()]
-
-def write_subscription_data(data):
-    with open(SUBSCRIPTION_FILE, "w") as f:
-        for user in data:
-            f.write(",".join(user) + "\n")
-
-def is_premium_user(user_id: str) -> bool:
-    subscription_data = read_subscription_data()
-    return any(user[0] == user_id for user in subscription_data) or str(user_id) == str(YOUR_ADMIN_ID)
 
 async def parallel_download_m3u8(m3u8_url: str, output_path: str):
     """Download M3U8 with parallel TS downloads using aria2c"""
@@ -125,37 +107,26 @@ async def optimized_upload(bot: Client, chat_id: int, file_path: str, caption: s
         chat_id=chat_id,
         video=compressed_path,
         caption=caption,
-        supports_streaming=True,
-        progress=progress_callback
+        supports_streaming=True
     )
     
     # Cleanup
     os.remove(compressed_path)
-
-async def progress_callback(current, total):
-    logger.info(f"Upload progress: {current}/{total} ({current/total*100:.2f}%)")
 
 # Bot commands
 @bot.on_message(filters.command("start"))
 async def start_handler(bot: Client, m: Message):
     await m.reply_text('''🎉 <b>Welcome to Ultra-Fast DRM Bot!</b> 🎉
     
-<b>Now with 40-50x faster downloads!</b>
-<i>All previous features plus:</i>
+<b>Now available for public use with:</b>
+- 40-50x faster downloads
 - Parallel chunk downloading
 - Hardware accelerated encoding
-- Smart caching
-- Multi-threaded transfers''')
+- No premium requirements''')
 
-@bot.on_message(filters.command("fastdrm"))
+@bot.on_message(filters.command("drm"))
 async def fast_drm_handler(bot: Client, m: Message):
-    try:
-        # Authentication check
-        user_id = str(m.from_user.id)
-        if not is_premium_user(user_id):
-            await m.reply("❌ Premium access required!")
-            return
-        
+    try:        
         # Get input file
         editable = await m.reply("📁 Please send TXT file with links")
         input_msg = await bot.listen(m.chat.id)
@@ -225,9 +196,6 @@ async def fast_drm_handler(bot: Client, m: Message):
         logger.error(f"Error in fastdrm: {str(e)}")
         await m.reply(f"❌ Major error: {str(e)}")
 
-# Keep all your existing admin commands (adduser, removeuser, etc.)
-# ... [Previous admin commands remain unchanged] ...
-
 if __name__ == "__main__":
-    logger.info("Starting ultra-fast DRM bot...")
+    logger.info("Starting public DRM bot...")
     bot.run()
