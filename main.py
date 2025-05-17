@@ -25,7 +25,7 @@ MAX_PARALLEL_DOWNLOADS = 16
 CHUNK_SIZE = 1024 * 1024 * 4  # 4MB chunks
 UPLOAD_CHUNK_SIZE = 512 * 1024
 SUBSCRIPTION_FILE = "subscription_data.txt"
-YOUR_ADMIN_ID = 7517045929
+YOUR_ADMIN_ID = 6877021488
 
 bot = Client("fast_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
